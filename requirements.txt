@@ -1,0 +1,7 @@
+streamlit
+deepgram-sdk[extras]
+instructor
+openai
+pydantic
+python-dotenv
+neo4j
