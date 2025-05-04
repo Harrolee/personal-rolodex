@@ -7,9 +7,13 @@ from typing import Optional
 from src.config import validate_api_keys
 from src.models import KnowledgeGraph, Person # Import Person for type hinting
 from src.persistence import load_kg, save_kg, load_chat_history, save_chat_history
-from src.services import synthesize_speech
-from src.kg_utils import merge_confirmed_data
+from src.services import DeepgramService, InstructorService
+from src.kg_utils import identify_new_persons, merge_confirmed_data
 from streamlit_components.core_processing import process_audio_story
+
+# --- Initialize Service Classes ---
+deepgram_service = DeepgramService()
+instructor_service = InstructorService()
 
 # --- Initial Setup & Validation ---
 
@@ -114,7 +118,7 @@ if st.session_state.needs_confirmation and st.session_state.new_persons_buffer:
 
                 # Generate TTS for the final response
                 with st.spinner("Generating audio response..."):
-                    synthesized_audio = asyncio.run(synthesize_speech(assistant_response))
+                    synthesized_audio = asyncio.run(deepgram_service.synthesize_speech(assistant_response))
 
                 st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
                 save_chat_history(st.session_state.chat_history)

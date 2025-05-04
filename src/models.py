@@ -12,6 +12,7 @@ class Person(BaseModel, frozen=True):
 class Event(BaseModel):
     id: str = Field(..., description="Unique identifier for the event (e.g., 'meeting_at_cafe_2024').")
     description: str = Field(..., description="A brief description of the event.")
+    attendees: Optional[List[str]] = Field(default_factory=list, description="List of person IDs who attended the event.")
 
 class Relationship(BaseModel):
     source: str = Field(..., description="The ID of the source node (Person or Event).")
