@@ -1,9 +1,13 @@
+import os
+# Set testing flag first
+os.environ['TESTING'] = 'true'
+
 import io
 import time
 import requests
 
 # Base URL for the running FastAPI service
-BASE_URL = "http://localhost:8000"
+BASE_URL = "http://localhost:8001"
 
 def test_health_check():
     """Test the root health check endpoint."""
