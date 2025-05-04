@@ -1,14 +1,13 @@
 import streamlit as st
 import asyncio
 import logging
-from typing import Optional
 
 # Import refactored components
 from src.config import validate_api_keys
-from src.models import KnowledgeGraph, Person # Import Person for type hinting
+from src.models import KnowledgeGraph
 from src.persistence import load_kg, save_kg, load_chat_history, save_chat_history
 from src.services import DeepgramService, InstructorService
-from src.kg_utils import identify_new_persons, merge_confirmed_data
+from src.kg_utils import merge_confirmed_data
 from streamlit_components.core_processing import process_audio_story
 
 # --- Initialize Service Classes ---

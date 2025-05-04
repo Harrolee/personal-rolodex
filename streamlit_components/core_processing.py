@@ -5,8 +5,13 @@ from typing import Optional
 
 from src.models import KnowledgeGraph
 from src.persistence import save_kg, save_chat_history
-from src.services import transcribe_audio, synthesize_speech, extract_kg_data
 from src.kg_utils import identify_new_persons, merge_confirmed_data
+from src.services.deepgram_service import DeepgramService
+from src.services.instructor_service import InstructorService
+
+# Instantiate service providers
+deepgram_service = DeepgramService()
+instructor_service = InstructorService()
 
 def process_audio_story():
     """
@@ -20,7 +25,7 @@ def process_audio_story():
         audio_bytes = st.session_state.audio_bytes_to_process  # Use the stored bytes
 
         with st.spinner("Processing story... Transcribing..."):
-            transcribed_text = asyncio.run(transcribe_audio(audio_bytes))
+            transcribed_text = asyncio.run(deepgram_service.transcribe_audio(audio_bytes))
             st.session_state.current_file_processed = True  # Mark as processed inside this block
 
         if transcribed_text:
@@ -35,7 +40,7 @@ def process_audio_story():
                 logging.info(f"Starting knowledge graph extraction for text: {transcribed_text[:100]}...")
                 try:
                     logging.info("Calling extract_kg_data function...")
-                    extracted_data: Optional[KnowledgeGraph] = asyncio.run(extract_kg_data(transcribed_text))
+                    extracted_data: Optional[KnowledgeGraph] = asyncio.run(instructor_service.extract_kg_data(transcribed_text))
                     if extracted_data is not None:
                         logging.info(f"Knowledge graph extraction completed successfully. Found {len(extracted_data.persons)} persons, {len(extracted_data.events)} events, {len(extracted_data.relationships)} relationships.")
                         if extracted_data.persons:
@@ -95,7 +100,7 @@ def process_audio_story():
             # Generate TTS only if processing didn't pause for confirmation
             if not st.session_state.needs_confirmation:
                 with st.spinner("Generating audio response..."):
-                    synthesized_audio = asyncio.run(synthesize_speech(assistant_response))
+                    synthesized_audio = asyncio.run(deepgram_service.synthesize_speech(assistant_response))
 
                 st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
                 save_chat_history(st.session_state.chat_history)
