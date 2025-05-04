@@ -7,8 +7,9 @@ from typing import Optional
 from src.config import validate_api_keys
 from src.models import KnowledgeGraph, Person # Import Person for type hinting
 from src.persistence import load_kg, save_kg, load_chat_history, save_chat_history
-from src.services import transcribe_audio, synthesize_speech, extract_kg_data
-from src.kg_utils import identify_new_persons, merge_confirmed_data
+from src.services import synthesize_speech
+from src.kg_utils import merge_confirmed_data
+from streamlit_components.core_processing import process_audio_story
 
 # --- Initial Setup & Validation ---
 
@@ -35,7 +36,8 @@ default_values = {
     'extracted_data_buffer': None,
     'new_persons_buffer': list,
     'uploaded_file_key': 0, # To help reset file uploader
-    'current_file_processed': False # Flag to prevent reprocessing the same file
+    'current_file_processed': False, # Flag to prevent reprocessing the same file
+    'audio_bytes_to_process': None # To store bytes from either source
 }
 for key, default_value_or_factory in default_values.items():
     if key not in st.session_state:
@@ -131,6 +133,8 @@ if st.session_state.needs_confirmation and st.session_state.new_persons_buffer:
 
 # --- Audio Input & Processing Trigger ---
 st.header("Tell a Story")
+
+# Option 1: Upload File
 # Use the key to allow resetting the uploader
 uploaded_file = st.file_uploader(
     "Upload an audio file (WAV recommended):",
@@ -138,127 +142,61 @@ uploaded_file = st.file_uploader(
     disabled=st.session_state.processing or st.session_state.needs_confirmation, # Disable if processing or confirming
     key=f"file_uploader_{st.session_state.uploaded_file_key}"
 )
-
-process_button = st.button(
+process_upload_button = st.button(
     "Process Uploaded Story",
-    disabled=st.session_state.processing or st.session_state.needs_confirmation or not uploaded_file
+    disabled=st.session_state.processing or st.session_state.needs_confirmation or not uploaded_file,
+    key="process_upload_btn"
 )
 
-if process_button and uploaded_file is not None:
-    st.session_state.processing = True
-    # Clear previous confirmation state if starting new processing
-    st.session_state.needs_confirmation = False
-    st.session_state.extracted_data_buffer = None
-    st.session_state.new_persons_buffer = []
-    st.session_state.current_file_processed = False # Reset processing flag for new file
-    st.rerun()
+st.markdown("--- OR ---")
+
+# Option 2: Record Audio
+recorded_audio_bytes = st.audio_input(
+    "Record a voice message:",
+    disabled=st.session_state.processing or st.session_state.needs_confirmation,
+    key=f"audio_input_{st.session_state.uploaded_file_key}" # Use same key logic to reset
+)
+process_recording_button = st.button(
+    "Process Recording",
+    disabled=st.session_state.processing or st.session_state.needs_confirmation or not recorded_audio_bytes,
+    key="process_recording_btn"
+)
+
+
+# Trigger processing if either button is pressed
+if (process_upload_button and uploaded_file is not None) or \
+   (process_recording_button and recorded_audio_bytes is not None):
+
+    # Determine the source of audio bytes
+    if process_upload_button and uploaded_file is not None:
+        st.session_state.audio_bytes_to_process = uploaded_file.getvalue()
+        logging.info("Processing triggered by uploaded file.")
+    elif process_recording_button and recorded_audio_bytes is not None:
+        st.session_state.audio_bytes_to_process = recorded_audio_bytes
+        logging.info("Processing triggered by recorded audio.")
+    else:
+         # This case should ideally not be reached due to button logic, but good to handle
+        st.session_state.audio_bytes_to_process = None
+        logging.warning("Processing trigger condition met but no audio source found.")
+
+
+    if st.session_state.audio_bytes_to_process:
+        st.session_state.processing = True
+        # Clear previous confirmation state if starting new processing
+        st.session_state.needs_confirmation = False
+        st.session_state.extracted_data_buffer = None
+        st.session_state.new_persons_buffer = []
+        st.session_state.current_file_processed = False # Reset processing flag for new input
+        logging.info("Setting processing state to True and resetting confirmation/buffers.")
+        st.rerun() # Rerun to show spinner and start processing block
+    else:
+        # If for some reason we triggered but have no bytes, reset and log
+        st.session_state.processing = False
+        st.warning("Could not get audio bytes to process.")
+
 
 # --- Core Processing Logic ---
-if st.session_state.processing and not st.session_state.needs_confirmation and uploaded_file is not None and not st.session_state.current_file_processed:
-    assistant_response = "Processing failed." # Default response
-    synthesized_audio = None
-    processed_successfully = False
-
-    with st.spinner("Processing story... Transcribing..."):
-        audio_bytes = uploaded_file.getvalue()
-        transcribed_text = asyncio.run(transcribe_audio(audio_bytes))
-
-    if transcribed_text:
-        # Add user message immediately after transcription
-        st.session_state.chat_history.append({"role": "user", "content": transcribed_text})
-        save_chat_history(st.session_state.chat_history)
-        
-        # Process the transcription directly without rerunning
-        logging.info(f"Processing transcribed text directly: {transcribed_text[:100]}...")
-
-        with st.spinner("Extracting information..."):
-            logging.info(f"Starting knowledge graph extraction for text: {transcribed_text[:100]}...")
-            try:
-                # Log that we're about to call extract_kg_data
-                logging.info("Calling extract_kg_data function...")
-                
-                # Call extract_kg_data with the transcribed text
-                extracted_data: Optional[KnowledgeGraph] = asyncio.run(extract_kg_data(transcribed_text))
-                
-                # Log the result of the extraction
-                if extracted_data is not None:
-                    logging.info(f"Knowledge graph extraction completed successfully. Found {len(extracted_data.persons)} persons, {len(extracted_data.events)} events, {len(extracted_data.relationships)} relationships.")
-                    # Log the actual data for debugging
-                    if extracted_data.persons:
-                        logging.info(f"Extracted persons: {[p.name for p in extracted_data.persons]}")
-                    if extracted_data.events:
-                        logging.info(f"Extracted events: {[e.description for e in extracted_data.events]}")
-                    if extracted_data.relationships:
-                        logging.info(f"Extracted relationships: {[(r.source, r.target, r.type) for r in extracted_data.relationships]}")
-                else:
-                    logging.error("Knowledge graph extraction returned None.")
-            except Exception as e:
-                logging.error(f"Exception during knowledge graph extraction: {str(e)}")
-                import traceback
-                logging.error(f"Traceback: {traceback.format_exc()}")
-                extracted_data = None
-                
-            logging.info(f"Extraction complete. extracted_data is None: {extracted_data is None}")
-
-        if extracted_data:
-            # Identify new persons BEFORE merging anything
-            new_persons = identify_new_persons(st.session_state.knowledge_graph, extracted_data.persons)
-
-            if new_persons:
-                # Need confirmation - store data and set flag
-                st.session_state.needs_confirmation = True
-                st.session_state.new_persons_buffer = new_persons
-                st.session_state.extracted_data_buffer = extracted_data # Store all extracted data
-                logging.info("Extraction complete, pausing for user confirmation.")
-                st.rerun() # Rerun to display the confirmation form
-
-            else:
-                # No new persons, merge directly (only events and relationships)
-                logging.info("No new persons found, merging events and relationships directly.")
-                updated_kg = merge_confirmed_data(
-                    current_kg=st.session_state.knowledge_graph,
-                    confirmed_persons=[], # No new persons to confirm
-                    extracted_events=extracted_data.events,
-                    extracted_relationships=extracted_data.relationships
-                )
-                if updated_kg != st.session_state.knowledge_graph:
-                    st.session_state.knowledge_graph = updated_kg
-                    save_kg(st.session_state.knowledge_graph)
-                    logging.info("Knowledge graph updated with events/relationships.")
-                    st.sidebar.json(st.session_state.knowledge_graph.model_dump(), expanded=False) # Update sidebar
-                    assistant_response = f"Okay, I processed the story and added {len(extracted_data.events)} event(s) and {len(extracted_data.relationships)} relationship(s) to the knowledge graph."
-                else:
-                    assistant_response = "Okay, I processed the story. No new information was added to the knowledge graph."
-                processed_successfully = True
-
-        elif extracted_data is not None: # Extraction ran but found nothing
-            assistant_response = "I understood the story, but didn't find any people, events, or relationships to add."
-            processed_successfully = True
-        else: # Extraction failed
-            assistant_response = "I understood the story, but encountered an error trying to extract structured information."
-            processed_successfully = False # Indicate failure
-
-        # Generate TTS only if processing didn't pause for confirmation
-        if not st.session_state.needs_confirmation:
-            with st.spinner("Generating audio response..."):
-                synthesized_audio = asyncio.run(synthesize_speech(assistant_response))
-
-            st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
-            save_chat_history(st.session_state.chat_history)
-
-            if synthesized_audio:
-                st.audio(synthesized_audio, format="audio/wav")
-
-            # Reset processing state only if not paused for confirmation
-            st.session_state.processing = False
-            st.session_state.uploaded_file_key += 1 # Increment key to reset uploader
-            st.rerun()
-
-    elif st.session_state.processing: # Handle transcription failure case
-        st.error("Transcription failed. Please check the logs or try a different file.")
-        st.session_state.processing = False
-        st.session_state.uploaded_file_key += 1 # Increment key to reset uploader
-        st.rerun()
+process_audio_story()
 
 
 # --- Placeholder for Text Input Querying ---
