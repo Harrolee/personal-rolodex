@@ -7,8 +7,12 @@ from typing import Optional
 from src.config import validate_api_keys
 from src.models import KnowledgeGraph, Person # Import Person for type hinting
 from src.persistence import load_kg, save_kg, load_chat_history, save_chat_history
-from src.services import transcribe_audio, synthesize_speech, extract_kg_data
+from src.services import DeepgramService, InstructorService
 from src.kg_utils import identify_new_persons, merge_confirmed_data
+
+# --- Initialize Service Classes ---
+deepgram_service = DeepgramService()
+instructor_service = InstructorService()
 
 # --- Initial Setup & Validation ---
 
@@ -112,7 +116,7 @@ if st.session_state.needs_confirmation and st.session_state.new_persons_buffer:
 
                 # Generate TTS for the final response
                 with st.spinner("Generating audio response..."):
-                    synthesized_audio = asyncio.run(synthesize_speech(assistant_response))
+                    synthesized_audio = asyncio.run(deepgram_service.synthesize_speech(assistant_response))
 
                 st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
                 save_chat_history(st.session_state.chat_history)
@@ -161,7 +165,7 @@ if st.session_state.processing and not st.session_state.needs_confirmation and u
 
     with st.spinner("Processing story... Transcribing..."):
         audio_bytes = uploaded_file.getvalue()
-        transcribed_text = asyncio.run(transcribe_audio(audio_bytes))
+        transcribed_text = asyncio.run(deepgram_service.transcribe_audio(audio_bytes))
 
     if transcribed_text:
         # Add user message immediately after transcription
@@ -178,7 +182,7 @@ if st.session_state.processing and not st.session_state.needs_confirmation and u
                 logging.info("Calling extract_kg_data function...")
                 
                 # Call extract_kg_data with the transcribed text
-                extracted_data: Optional[KnowledgeGraph] = asyncio.run(extract_kg_data(transcribed_text))
+                extracted_data: Optional[KnowledgeGraph] = asyncio.run(instructor_service.extract_kg_data(transcribed_text))
                 
                 # Log the result of the extraction
                 if extracted_data is not None:
@@ -241,7 +245,7 @@ if st.session_state.processing and not st.session_state.needs_confirmation and u
         # Generate TTS only if processing didn't pause for confirmation
         if not st.session_state.needs_confirmation:
             with st.spinner("Generating audio response..."):
-                synthesized_audio = asyncio.run(synthesize_speech(assistant_response))
+                synthesized_audio = asyncio.run(deepgram_service.synthesize_speech(assistant_response))
 
             st.session_state.chat_history.append({"role": "assistant", "content": assistant_response})
             save_chat_history(st.session_state.chat_history)

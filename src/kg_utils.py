@@ -42,8 +42,9 @@ def merge_confirmed_data(current_kg: KnowledgeGraph, confirmed_persons: List[Per
         event_id = normalize_id(event.id if event.id else event.description[:30])
 
         if event_id and event_id not in current_event_ids and event_id not in event_ids_added_this_run:
-            # Recreate event with normalized ID
-            updated_kg.events.append(Event(id=event_id, description=event.description))
+            # Recreate event with normalized ID and attendees if present
+            attendees = getattr(event, 'attendees', [])
+            updated_kg.events.append(Event(id=event_id, description=event.description, attendees=attendees))
             current_event_ids.add(event_id)
             event_ids_added_this_run.add(event_id)
             logging.info(f"Adding new event: {event.description[:30]}... (ID: {event_id})")

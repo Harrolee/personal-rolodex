@@ -1,10 +1,1 @@
-[
-  {
-    "role": "user",
-    "content": "I went with Daniel Lomolino to State Street Pub this morning and had brunch and coffee with the two owners of Shove Coffee, whose names are Emery and Steven. They are our new friends. I play music in a band with Daniel. He is my best friend."
-  },
-  {
-    "role": "assistant",
-    "content": "Okay, I've added the confirmed people and related information to the knowledge graph."
-  }
-]
+[]

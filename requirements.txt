@@ -5,3 +5,4 @@ openai
 pydantic
 python-dotenv
 neo4j
+pytest
